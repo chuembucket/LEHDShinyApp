@@ -11,7 +11,10 @@ library(patchwork)
 library(leaflet)
 library(leafsync)
 library(gt)
-library(lehdr) #https://github.com/jamgreen/lehdr
+library(lehdr)
+#install.packages("devtools", repos = "http://cran.us.r-project.org")
+#devtools::install_github("jamgreen/lehdr")
+source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/functions.r")
 
 options(tigris_use_cache = TRUE)
 options(scipen = 999)
@@ -44,35 +47,40 @@ census_api_key("746ea8916547306ae2abf2aafe059e1a1b70b98a")
 #more census variables should be added
 vars <- c("B23001_001")
 
-year <- 2019
+year <- 2020
 
 
 dvrpc_pacounties <- c('Bucks','Philadelphia', 'Chester','Montgomery', 'Delaware')
 dvrpc_njcounties <- c('Camden', 'Gloucester', 'Burlington','Mercer')
 #delaware
 
-msa_acs <- rbind(
-  get_acs(geography = "tract",
-    year = year,
-    variables = vars,
-    geometry = TRUE,
-    state = "PA",
-    county = dvrpc_pacounties,
-    output = "wide"),
-  get_acs(geography = "tract",
-    year = year,
-    variables = vars,
-    geometry = TRUE,
-    state = "NJ",
-    county = dvrpc_njcounties,
-    output = "wide")) %>% 
-  st_transform(crs = 4326) %>% 
-  mutate(
-    tract_area = st_area(.)
-  )
-  
-  
-  
+# msa_acs <- rbind(
+#   get_acs(geography = "tract",
+#     year = year,
+#     variables = vars,
+#     geometry = TRUE,
+#     state = "PA",
+#     county = dvrpc_pacounties,
+#     output = "wide",
+#     survey = "acs1"),
+#   get_acs(geography = "tract",
+#     year = year,
+#     variables = vars,
+#     geometry = TRUE,
+#     state = "NJ",
+#     county = dvrpc_njcounties,
+#     output = "wide",
+#     survey = "acs1")) %>% 
+#   mutate(
+#     tract_area = st_area(.)
+#   )
+
+
+
+# %>% 
+#   st_transform(crs = 4269)
+
+#st_crs(msa_acs)
   
 #residential area characteristics
 msa_rac_load  <- rbind(
@@ -83,15 +91,15 @@ msa_rac_load  <- rbind(
             job_type = "JT01",
             segment = "S000", 
             state_part = "main", 
-            agg_geo = "tract"),
+            agg_geo = "bg"),
   grab_lodes(state = "nj", 
              year = year, 
-             #version = "LODES8", 
+             version = "LODES8", 
              lodes_type = "rac", 
              job_type = "JT01",
              segment = "S000", 
              state_part = "main", 
-             agg_geo = "tract"))
+             agg_geo = "bg"))
 
 
 
@@ -145,19 +153,29 @@ msa_rac <- msa_rac_load %>%
 var_list <- colnames(msa_rac)[4:ncol(msa_rac)] %>% sub(pattern = '_rac',replacement = '')
 
 
+msa_bg <- rbind(block_groups(state = 'pa',
+                              county = dvrpc_pacounties,
+                              year = year),
+                     block_groups(state = 'nj',
+                                  county = dvrpc_njcounties,
+                                  year = year)
+                     ) %>% 
+    mutate(
+      bg_area = st_area(.)
+    )
+  
+
+msa_rac_sf <- left_join(msa_bg, msa_rac, by = c('GEOID' = 'h_bg')) %>% 
+  mutate_at(vars(paste0(var_list,'_rac')), ~ as.numeric(. / bg_area)*1000000 )
 
 
-msa_rac_sf <- left_join(msa_acs, msa_rac, by = c('GEOID' = 'h_tract')) %>% 
-  mutate_at(vars(paste0(var_list,'_rac')), ~ as.numeric(. / tract_area)*1000000 )
-
-
-
+mapview(msa_rac_sf)
 
 #Work area characteristics
 msa_wac_load  <- rbind(
   grab_lodes(state = "pa", 
              year = year, 
-             #version = "LODES8", 
+             version = "LODES8", 
              lodes_type = "wac", 
              job_type = "JT01",
              segment = "S000", 
@@ -165,7 +183,7 @@ msa_wac_load  <- rbind(
              agg_geo = "tract"),
   grab_lodes(state = "nj", 
              year = year, 
-             #version = "LODES8", 
+             version = "LODES8", 
              lodes_type = "wac", 
              job_type = "JT01",
              segment = "S000", 
@@ -215,8 +233,9 @@ msa_wac <- msa_wac_load %>%
          associate_wac = CD03,
          bachProfessional_wac = CD04) 
 
-msa_wac_sf <- left_join(msa_acs, msa_wac, by = c('GEOID' = 'w_tract')) %>% na.omit()%>% 
+msa_wac_sf <- left_join(msa_acs, msa_wac, by = c('GEOID' = 'w_tract')) %>% 
   mutate_at(vars(paste0(var_list,'_wac')), ~ as.numeric(. / tract_area)*1000000 )
+
 
 # phl_wac_sf <- msa_wac_sf %>% filter(grepl("Philadelphia County", NAME))
 # phl_rac_sf <- msa_rac_sf %>% filter(grepl("Philadelphia County", NAME))
@@ -275,31 +294,21 @@ msa_wac_sf <- left_join(msa_acs, msa_wac, by = c('GEOID' = 'w_tract')) %>% na.om
 var <-'informationTech'
 
 
-binpal <- colorNumeric(palette = "YlGnBu", domain = msa_wac_sf$informationTech_wac)
-
-wac_leaf<-leaflet() %>% addProviderTiles(providers$CartoDB.Positron) %>%
-  setView(lng = -75.161802, lat = 39.957673, zoom = 11) %>%
-  addPolygons(
-    data = msa_wac_sf,
-    fillColor =   ~binpal(msa_wac_sf$informationTech_wac),
-    color = "lightgrey",
-    weight = 1,
-    fillOpacity = 0.8,
-    highlight = highlightOptions(
-      weight = 2,
-      color = "black",
-      fillOpacity = 0.8
-    )) 
 
 ###
+ggplot(msa_wac_sf, aes(x = informationTech_wac, fill = ifelse(informationTech_wac == 0,'y','n')))+
+  geom_histogram()
 
-binpal_rac <- colorBin("Reds", msa_rac_sf$informationTech_rac, 8, pretty = T)
 
-leaflet() %>% addProviderTiles(providers$CartoDB.Positron) %>%
+
+### Work Area Characteristics Leaflet 
+binpal_wac <- colorQuantile("Reds", msa_wac_sf$informationTech_wac, 5)
+
+leaflet() %>% addProviderTiles(providers$CartoDB.DarkMatter) %>%
   setView(lng = -75.161802, lat = 39.957673, zoom = 11) %>%
   addPolygons(
     data = msa_wac_sf,
-    fillColor =  ~binpal(informationTech_wac),
+    fillColor =  ~binpal_wac(informationTech_wac),
     color = "lightgrey",
     weight = 1,
     fillOpacity = 0.8,
@@ -308,13 +317,43 @@ leaflet() %>% addProviderTiles(providers$CartoDB.Positron) %>%
       color = "black",
       fillOpacity = 0.8
     )) %>%
-  addLegend(data = msa_wac_sf, position = "bottomright", pal = binpal, values = ~informationTech_wac,
+  addLegend(data = msa_wac_sf, position = "bottomright", pal = binpal_wac, values = ~informationTech_wac,
             title = "informationTech_wac",
             opacity = 1
-  )
+  ) 
+
+# wac_lf<-
+# %>% 
+#   syncWith("basicmaps")
 
 
+### Residential Area Characteristics Leaflet
+binpal_rac <- colorQuantile("Reds", msa_rac_sf$informationTech_rac, 5)
 
+
+rac_lf<-leaflet() %>% addProviderTiles(providers$CartoDB.DarkMatter) %>%
+  setView(lng = -75.161802, lat = 39.957673, zoom = 11) %>%
+  addPolygons(
+    data = msa_rac_sf,
+    fillColor =  ~binpal_rac(informationTech_rac),
+    color = "NA",
+    weight = 1,
+    fillOpacity = 0.8,
+    highlight = highlightOptions(
+      weight = 2,
+      color = "black",
+      fillOpacity = 0.8
+    )) %>%
+  addLegend(data = msa_rac_sf, position = "bottomright", pal = binpal_rac, values = ~informationTech_rac,
+            title = "informationTech_rac",
+            opacity = 1
+  ) 
+
+# %>% 
+#   syncWith("basicmaps")
+
+
+rac_lf
 ### histogram to figure color pallete breaks
 
 cc <- msa_wac_sf %>% filter(GEOID == 42101000402)
@@ -333,11 +372,11 @@ label_interval <- function(breaks) {
 
 color_breaks <- c(0, 1,10,5000,15000,30000)
 
-binpal <- colorFactor("Blues", cut(msa_wac_sf[[var_wac]], breaks = color_breaks, labels = label_interval(color_breaks)))
+binpal <- colorFactor("Reds", cut(msa_wac_sf[[var_wac]], breaks = color_breaks, labels = label_interval(color_breaks)))
 
+q5(msa_wac_sf[[var_wac]])
 
-
-leaflet(msa_wac_sf) %>% addProviderTiles(providers$CartoDB.Positron) %>%
+leaflet(msa_wac_sf) %>% addProviderTiles(providers$CartoDB.DarkMatter) %>%
   setView(lng = -75.161802, lat = 39.957673, zoom = 11) %>%
   addPolygons(
     fillColor =  ~binpal(cut(var_wac_col, breaks = color_breaks, labels = label_interval(color_breaks))),
@@ -349,7 +388,7 @@ leaflet(msa_wac_sf) %>% addProviderTiles(providers$CartoDB.Positron) %>%
       color = "black",
       fillOpacity = 0.8
     )) %>%
-  addLegend(position = "bottomright", pal = binpal, values = ~cut(var_wac_col, breaks = color_breaks, labels = label_interval(color_breaks)),
+  addLegend(position = "bottomright", pal = binpal, values = ~cut(var_wac_col, breaks = qBr(msa_wac_sf, var_wac), labels = label_interval(color_breaks)),
             title = "informationTech_wac",
             opacity = 1
   )
@@ -384,3 +423,6 @@ ggplot(msa_wac_sf %>% filter(GEOID != 42101000402))+
 ### add wilmington
 ### map details
 ### yep
+### add philadelphia outline 
+### add KOZ and other tax break geos
+### add city/philly nbhd popup
