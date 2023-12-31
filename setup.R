@@ -44,8 +44,7 @@ mapTheme <- function(base_size = 8, title_size = 10, small_size = 6) {
 census_api_key("746ea8916547306ae2abf2aafe059e1a1b70b98a")
 
 
-#more census variables should be added
-vars <- c("B23001_001")
+
 
 year <- 2020
 
@@ -54,33 +53,7 @@ dvrpc_pacounties <- c('Bucks','Philadelphia', 'Chester','Montgomery', 'Delaware'
 dvrpc_njcounties <- c('Camden', 'Gloucester', 'Burlington','Mercer')
 #delaware
 
-# msa_acs <- rbind(
-#   get_acs(geography = "tract",
-#     year = year,
-#     variables = vars,
-#     geometry = TRUE,
-#     state = "PA",
-#     county = dvrpc_pacounties,
-#     output = "wide",
-#     survey = "acs1"),
-#   get_acs(geography = "tract",
-#     year = year,
-#     variables = vars,
-#     geometry = TRUE,
-#     state = "NJ",
-#     county = dvrpc_njcounties,
-#     output = "wide",
-#     survey = "acs1")) %>% 
-#   mutate(
-#     tract_area = st_area(.)
-#   )
 
-
-
-# %>% 
-#   st_transform(crs = 4269)
-
-#st_crs(msa_acs)
   
 #residential area characteristics
 msa_rac_load  <- rbind(
@@ -166,10 +139,12 @@ msa_bg <- rbind(block_groups(state = 'pa',
   
 
 msa_rac_sf <- left_join(msa_bg, msa_rac, by = c('GEOID' = 'h_bg')) %>% 
-  mutate_at(vars(paste0(var_list,'_rac')), ~ as.numeric(. / bg_area)*1000000 )
+  mutate_at(vars(paste0(var_list,'_rac')), ~ ifelse(as.numeric(bg_area)!=0,
+                                                    as.numeric(. / bg_area)*1000000,
+                                                    0))
 
 
-mapview(msa_rac_sf)
+#mapview(msa_rac_sf)
 
 #Work area characteristics
 msa_wac_load  <- rbind(
@@ -180,7 +155,7 @@ msa_wac_load  <- rbind(
              job_type = "JT01",
              segment = "S000", 
              state_part = "main", 
-             agg_geo = "tract"),
+             agg_geo = "bg"),
   grab_lodes(state = "nj", 
              year = year, 
              version = "LODES8", 
@@ -188,7 +163,7 @@ msa_wac_load  <- rbind(
              job_type = "JT01",
              segment = "S000", 
              state_part = "main", 
-             agg_geo = "tract"))
+             agg_geo = "bg"))
 
 msa_wac <- msa_wac_load %>% 
   rename(total_jobs_wac = C000,
@@ -233,58 +208,10 @@ msa_wac <- msa_wac_load %>%
          associate_wac = CD03,
          bachProfessional_wac = CD04) 
 
-msa_wac_sf <- left_join(msa_acs, msa_wac, by = c('GEOID' = 'w_tract')) %>% 
-  mutate_at(vars(paste0(var_list,'_wac')), ~ as.numeric(. / tract_area)*1000000 )
-
-
-# phl_wac_sf <- msa_wac_sf %>% filter(grepl("Philadelphia County", NAME))
-# phl_rac_sf <- msa_rac_sf %>% filter(grepl("Philadelphia County", NAME))
-
-#%>% filter(grepl("Philadelphia County", NAME))
-# get difference between # of employees vs # of jobs in tract
-#ppl who live there - ppl who work there
-# phl_econ1 <- phl_econ %>% mutate(
-#   total_jobs_diff = total_jobs_rac - total_jobs_wac ,
-#   age_29_or_younger_diff = age_29_or_younger_rac- age_29_or_younger_wac,
-#   age_30_to_54_diff = age_30_to_54_rac-age_30_to_54_wac,
-#   age_55_or_older_diff = age_55_or_older_rac-age_55_or_older_wac,
-#   monthly_income_1250_or_less_diff = monthly_income_1250_or_less_rac -monthly_income_1250_or_less_wac ,
-#   monthly_income_1251_to_3333_diff = monthly_income_1251_to_3333_rac -monthly_income_1251_to_3333_wac ,
-#   monthly_income_3334_or_more_diff = monthly_income_3334_or_more_rac-monthly_income_3334_or_more_wac,
-#   agriculture_diff = agriculture_rac -agriculture_wac , # agriculture, forestry, fishing, hunting / NAICS11
-#   mining_diff = mining_rac-mining_wac, # mining, oil/gas extraction / MAICS21
-#   utilities_diff = utilities_rac-utilities_wac, # utilities / NAICS22
-#   construction_diff = construction_rac-construction_wac, # construction / NAICS23
-#   manufacturing_diff = manufacturing_rac-manufacturing_wac, # manufacturing /NAICS31 and NAICS33
-#   wholesaleTrade_diff = wholesaleTrade_rac-wholesaleTrade_wac, # wholesale trade / NAICS42
-#   retailTrade_diff = retailTrade_rac-retailTrade_wac, # retail trade / 44/46
-#   transportationWarehousing_diff = transportationWarehousing_rac-transportationWarehousing_wac, # transportation and warehousing / 48, 49
-#   informationTech_diff = informationTech_rac-informationTech_wac, # information /51
-#   financeInsurance_diff = financeInsurance_rac-financeInsurance_wac, # finance and insurance /52
-#   realEstate_diff = realEstate_rac-realEstate_wac, # real estate /53
-#   techServices_diff = techServices_rac-techServices_wac, # professional, scientific, and tech services /54
-#   management_diff = management_rac-management_wac, # management (enterprise) /55
-#   wasteRemediation_diff = wasteRemediation_rac-wasteRemediation_wac, # waste / remediation /56
-#   educational_diff = educational_rac-educational_wac, # education /61
-#   healthcareSocial_diff = healthcareSocial_rac-healthcareSocial_wac, # healthcare/social services /62
-#   artsEntertainmentRec_diff = artsEntertainmentRec_rac-artsEntertainmentRec_wac, # arts/entertainment/rec /71
-#   foodServices_diff = foodServices_rac-foodServices_wac, # food services /72
-#   otherJobs_diff = otherJobs_rac-otherJobs_wac, # other /81
-#   publicAdmin_diff = publicAdmin_rac-publicAdmin_wac, # public admin /92
-#   white_diff = white_rac-white_wac,
-#   black_diff = black_rac-black_wac,
-#   native_american_diff = native_american_rac-native_american_wac,
-#   asian_diff = asian_rac-asian_wac,
-#   pacific_diff = pacific_rac-pacific_wac,
-#   mixed_race_diff = mixed_race_rac-mixed_race_wac,
-#   not_hispanic_diff = not_hispanic_rac-not_hispanic_wac,
-#   hispanic_diff = hispanic_rac-hispanic_wac,
-#   male_diff = male_rac-male_wac,
-#   female_diff = female_rac-female_wac,
-#   underHS_diff = underHS_rac-underHS_wac,
-#   HS_diff = HS_rac-HS_wac,
-#   associate_diff = associate_rac-associate_wac,
-#   bachProfessional_diff = bachProfessional_rac-bachProfessional_wac)
+msa_wac_sf <- left_join(msa_bg, msa_wac, by = c('GEOID' = 'w_bg')) %>% 
+  mutate_at(vars(paste0(var_list,'_wac')), ~ as.numeric(ifelse(as.numeric(bg_area)!=0,
+                                                               as.numeric(. / bg_area)*1000000,
+                                                               0)))
 
 ## viz
 
@@ -302,7 +229,7 @@ ggplot(msa_wac_sf, aes(x = informationTech_wac, fill = ifelse(informationTech_wa
 
 
 ### Work Area Characteristics Leaflet 
-binpal_wac <- colorQuantile("Reds", msa_wac_sf$informationTech_wac, 5)
+binpal_wac <- colorQuantile("Reds", msa_wac_sf$informationTech_wac, 5, na.color = 'black', )
 
 leaflet() %>% addProviderTiles(providers$CartoDB.DarkMatter) %>%
   setView(lng = -75.161802, lat = 39.957673, zoom = 11) %>%
@@ -331,7 +258,7 @@ leaflet() %>% addProviderTiles(providers$CartoDB.DarkMatter) %>%
 binpal_rac <- colorQuantile("Reds", msa_rac_sf$informationTech_rac, 5)
 
 
-rac_lf<-leaflet() %>% addProviderTiles(providers$CartoDB.DarkMatter) %>%
+leaflet() %>% addProviderTiles(providers$CartoDB.DarkMatter) %>%
   setView(lng = -75.161802, lat = 39.957673, zoom = 11) %>%
   addPolygons(
     data = msa_rac_sf,
@@ -348,14 +275,19 @@ rac_lf<-leaflet() %>% addProviderTiles(providers$CartoDB.DarkMatter) %>%
             title = "informationTech_rac",
             opacity = 1
   ) 
-
+#rac_lf<-
 # %>% 
 #   syncWith("basicmaps")
 
 
 rac_lf
-### histogram to figure color pallete breaks
 
+
+
+
+## histogram to figure color pallete breaks
+
+### center city tile
 cc <- msa_wac_sf %>% filter(GEOID == 42101000402)
 cc_val <- cc %>% pull(paste0(var,'_wac')) 
 
@@ -365,16 +297,9 @@ var <-'informationTech'
 var_wac <- paste0(var,'_wac')
 var_wac_col <- msa_wac_sf[[var_wac]] 
 
-label_interval <- function(breaks) {
-  paste0("(", breaks[1:length(breaks) - 1], " - ", breaks[2:length(breaks)], ")")
-}
 
 
-color_breaks <- c(0, 1,10,5000,15000,30000)
-
-binpal <- colorFactor("Reds", cut(msa_wac_sf[[var_wac]], breaks = color_breaks, labels = label_interval(color_breaks)))
-
-q5(msa_wac_sf[[var_wac]])
+q5(var_wac_col)
 
 leaflet(msa_wac_sf) %>% addProviderTiles(providers$CartoDB.DarkMatter) %>%
   setView(lng = -75.161802, lat = 39.957673, zoom = 11) %>%
@@ -426,3 +351,61 @@ ggplot(msa_wac_sf %>% filter(GEOID != 42101000402))+
 ### add philadelphia outline 
 ### add KOZ and other tax break geos
 ### add city/philly nbhd popup
+
+
+
+
+#%>% filter(grepl("Philadelphia County", NAME))
+# get difference between # of employees vs # of jobs in tract
+#ppl who live there - ppl who work there
+# phl_econ1 <- phl_econ %>% mutate(
+#   total_jobs_diff = total_jobs_rac - total_jobs_wac ,
+#   age_29_or_younger_diff = age_29_or_younger_rac- age_29_or_younger_wac,
+#   age_30_to_54_diff = age_30_to_54_rac-age_30_to_54_wac,
+#   age_55_or_older_diff = age_55_or_older_rac-age_55_or_older_wac,
+#   monthly_income_1250_or_less_diff = monthly_income_1250_or_less_rac -monthly_income_1250_or_less_wac ,
+#   monthly_income_1251_to_3333_diff = monthly_income_1251_to_3333_rac -monthly_income_1251_to_3333_wac ,
+#   monthly_income_3334_or_more_diff = monthly_income_3334_or_more_rac-monthly_income_3334_or_more_wac,
+#   agriculture_diff = agriculture_rac -agriculture_wac , # agriculture, forestry, fishing, hunting / NAICS11
+#   mining_diff = mining_rac-mining_wac, # mining, oil/gas extraction / MAICS21
+#   utilities_diff = utilities_rac-utilities_wac, # utilities / NAICS22
+#   construction_diff = construction_rac-construction_wac, # construction / NAICS23
+#   manufacturing_diff = manufacturing_rac-manufacturing_wac, # manufacturing /NAICS31 and NAICS33
+#   wholesaleTrade_diff = wholesaleTrade_rac-wholesaleTrade_wac, # wholesale trade / NAICS42
+#   retailTrade_diff = retailTrade_rac-retailTrade_wac, # retail trade / 44/46
+#   transportationWarehousing_diff = transportationWarehousing_rac-transportationWarehousing_wac, # transportation and warehousing / 48, 49
+#   informationTech_diff = informationTech_rac-informationTech_wac, # information /51
+#   financeInsurance_diff = financeInsurance_rac-financeInsurance_wac, # finance and insurance /52
+#   realEstate_diff = realEstate_rac-realEstate_wac, # real estate /53
+#   techServices_diff = techServices_rac-techServices_wac, # professional, scientific, and tech services /54
+#   management_diff = management_rac-management_wac, # management (enterprise) /55
+#   wasteRemediation_diff = wasteRemediation_rac-wasteRemediation_wac, # waste / remediation /56
+#   educational_diff = educational_rac-educational_wac, # education /61
+#   healthcareSocial_diff = healthcareSocial_rac-healthcareSocial_wac, # healthcare/social services /62
+#   artsEntertainmentRec_diff = artsEntertainmentRec_rac-artsEntertainmentRec_wac, # arts/entertainment/rec /71
+#   foodServices_diff = foodServices_rac-foodServices_wac, # food services /72
+#   otherJobs_diff = otherJobs_rac-otherJobs_wac, # other /81
+#   publicAdmin_diff = publicAdmin_rac-publicAdmin_wac, # public admin /92
+#   white_diff = white_rac-white_wac,
+#   black_diff = black_rac-black_wac,
+#   native_american_diff = native_american_rac-native_american_wac,
+#   asian_diff = asian_rac-asian_wac,
+#   pacific_diff = pacific_rac-pacific_wac,
+#   mixed_race_diff = mixed_race_rac-mixed_race_wac,
+#   not_hispanic_diff = not_hispanic_rac-not_hispanic_wac,
+#   hispanic_diff = hispanic_rac-hispanic_wac,
+#   male_diff = male_rac-male_wac,
+#   female_diff = female_rac-female_wac,
+#   underHS_diff = underHS_rac-underHS_wac,
+#   HS_diff = HS_rac-HS_wac,
+#   associate_diff = associate_rac-associate_wac,
+#   bachProfessional_diff = bachProfessional_rac-bachProfessional_wac)
+
+# label_interval <- function(breaks) {
+#   paste0("(", breaks[1:length(breaks) - 1], " - ", breaks[2:length(breaks)], ")")
+# }
+# 
+# 
+# color_breaks <- c(0, 1,10,5000,15000,30000)
+# 
+# binpal <- colorFactor("Reds", cut(msa_wac_sf[[var_wac]], breaks = color_breaks, labels = label_interval(color_breaks)))
